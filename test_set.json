@@ -2,16 +2,19 @@
     {
         "question": "CDB6s断路器用来做什么？",
         "reference_context": "CDB6s断路器用于电路保护。",
-        "reference_answer": "CDB6s断路器用于电路保护"
+        "reference_answer": "CDB6s断路器用于电路保护",
+        "expected_source": "德力西CDB6s微型断路器选型手册.pdf"
     },
     {
         "question": "普通车间配电柜多久巡检一次？",
         "reference_context": "普通车间配电柜每月巡检一次",
-        "reference_answer": "普通车间配电柜每月巡检一次"
+        "reference_answer": "普通车间配电柜每月巡检一次",
+        "expected_source": "低压配电柜日常维护规程.pdf"
     },
     {
         "question": "断路器跳闸之后第一步怎么做？",
         "reference_context": "断路器跳闸后，先断电排查故障，不能直接合闸。",
-        "reference_answer": "断路器跳闸后应先断电排查故障，不可直接合闸。"
+        "reference_answer": "断路器跳闸后应先断电排查故障，不可直接合闸。",
+        "expected_source": "低压配电柜日常维护规程.pdf"
     }
 ]

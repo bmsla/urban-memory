@@ -151,7 +151,7 @@ button{font-family:inherit}
       <ol>
         <li>回答只依据知识库内容，并标注来源文件</li>
         <li>多轮追问会结合上下文，可随时新建会话</li>
-        <li>来源卡片展示检索片段与相似度距离（越小越相关）</li>
+        <li>来源卡片展示检索片段与相关性分数（数值越大越相关）</li>
       </ol>
     </section>
   </aside>
@@ -360,12 +360,15 @@ button{font-family:inherit}
   function renderSources(container, list) {
     container.innerHTML = '';
     container.hidden = false;
-    container.appendChild(el('div', 'sources-title', '检索到 ' + list.length + ' 个相关片段（距离越小越相关）'));
+    container.appendChild(el('div', 'sources-title', '检索到 ' + list.length + ' 个相关片段'));
     list.forEach(function (s) {
       var card = el('div', 'source');
       var top = el('div', 'source-top');
       top.appendChild(el('span', 'source-name', s.source));
-      top.appendChild(el('span', 'dist', '距离 ' + s.distance.toFixed(4)));
+      var badge = s.rerank_score != null
+        ? '相关度 ' + Number(s.rerank_score).toFixed(4)
+        : '距离 ' + Number(s.distance).toFixed(4);
+      top.appendChild(el('span', 'dist', badge));
       card.appendChild(top);
       var content = s.content || '';
       var excerpt = content.length > 160 ? content.slice(0, 160) + '…' : content;

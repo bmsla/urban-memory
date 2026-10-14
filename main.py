@@ -43,11 +43,16 @@ def run_chat_loop(engine: RAGEngine, cfg: Config) -> None:
             print("可用命令: exit/quit 退出, /clear 清空当前会话历史")
             continue
 
-        # 1) 召回展示（FAISS 默认返回 L2 距离，数值越小越相似）
-        docs_with_score = engine.retrieve(q)
-        print("\n【召回片段与相似度距离（越小越相似）】")
-        for idx, (doc, score) in enumerate(docs_with_score, 1):
-            print(f"--- 片段{idx} 距离:{score:.4f} 来源:{doc.metadata.get('source', '未知')}")
+        # 1) 召回展示（向量距离越小越相似；开启 rerank 后按精排相关度排序）
+        hits = engine.retrieve(q)
+        print("\n【召回片段】")
+        for idx, hit in enumerate(hits, 1):
+            doc = hit["doc"]
+            src = doc.metadata.get("source", "未知")
+            if hit["rerank_score"] is not None:
+                print(f"--- 片段{idx} 精排相关度:{hit['rerank_score']:.4f} (向量距离:{hit['distance']}) 来源:{src}")
+            else:
+                print(f"--- 片段{idx} 向量距离:{hit['distance']:.4f} 来源:{src}")
             print(doc.page_content)
             print()
 

@@ -25,7 +25,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -64,6 +64,12 @@ class Config:
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     temperature: float = 0.1
     llm_timeout: int = 120
+
+    # Rerank：先用向量召回 candidate_k 条候选，再用 Cross-Encoder（gte-rerank-v2）
+    # 精排取 top_k。gte-rerank 在当前账号 403，已实测可用的是 gte-rerank-v2。
+    use_rerank: bool = True
+    rerank_model: str = "gte-rerank-v2"
+    retrieve_candidate_k: int = 15
 
     session_id: str = "session_001"
 
@@ -200,6 +206,49 @@ class DashScopeEmbedding(Embeddings):
         raise RuntimeError(f"Embedding 调用连续失败: {last_err}") from last_err
 
 
+# ===================== Rerank（Cross-Encoder 精排） =====================
+class DashScopeRerank:
+    """DashScope gte-rerank-v2：对向量召回的候选片段按 query-doc 相关性重排。
+
+    向量 Embedding 双塔是「粗排」（快但相关性判别粗），rerank 是「精排」：
+    query 和候选片段拼接后过 Cross-Encoder，给出更准的相关性分数。
+    """
+
+    def __init__(self, model: str, api_key: str, max_retries: int = 3):
+        dashscope.api_key = api_key
+        self.model = model
+        self.max_retries = max_retries
+
+    def rerank(
+        self, query: str, docs: List[Document], top_n: Optional[int] = None
+    ) -> List[tuple]:
+        """返回 [(Document, relevance_score)]，按相关性从高到低排序。"""
+        candidates = [d.page_content for d in docs]
+        last_err: Optional[Exception] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                resp = dashscope.TextReRank.call(
+                    model=self.model,
+                    query=query,
+                    documents=candidates,
+                    top_n=top_n or len(candidates),
+                    return_documents=False,
+                )
+                if resp.status_code != 200:
+                    raise RuntimeError(
+                        f"Rerank API 返回 {resp.status_code}: "
+                        f"{getattr(resp, 'code', '')} {getattr(resp, 'message', '')}"
+                    )
+                results = resp.output.results
+                return [(docs[r.index], float(r.relevance_score)) for r in results]
+            except Exception as e:  # noqa: BLE001 - 重试兜底
+                last_err = e
+                logger.warning("Rerank 调用失败(第%d/%d次): %s", attempt, self.max_retries, e)
+                if attempt < self.max_retries:
+                    time.sleep(min(2 ** attempt, 8))
+        raise RuntimeError(f"Rerank 调用连续失败: {last_err}") from last_err
+
+
 # ===================== 模块2：RAG 知识库构建与检索 =====================
 def split_docs(raw_docs: List[Document], cfg: Config) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
@@ -259,9 +308,24 @@ def load_or_build_index(cfg: Config, embeddings: Embeddings, rebuild: bool = Fal
         return build_index(cfg, embeddings)
 
 
-def build_retriever(vector_db: FAISS, cfg: Config):
-    # 基础向量检索，去掉 Rerank 重排；如需更高精度可自行接入 bge-reranker
-    return vector_db.as_retriever(search_kwargs={"k": cfg.retrieve_top_k})
+def build_retriever(vector_db: FAISS, cfg: Config, reranker: Optional[DashScopeRerank] = None):
+    """构造 LCEL 管道用的检索器：先向量召回 candidate_k，再按配置决定是否 rerank。"""
+
+    def retrieve(question: str) -> List[Document]:
+        hits = vector_db.similarity_search_with_score(
+            question, k=cfg.retrieve_candidate_k
+        )
+        docs = [doc for doc, _ in hits]
+        if reranker is None:
+            return docs[: cfg.retrieve_top_k]
+        try:
+            ranked = reranker.rerank(question, docs, top_n=cfg.retrieve_top_k)
+            return [doc for doc, _ in ranked]
+        except Exception as e:  # noqa: BLE001 - rerank 失败降级为纯向量检索
+            logger.warning("Rerank 失败，降级为纯向量检索: %s", e)
+            return docs[: cfg.retrieve_top_k]
+
+    return RunnableLambda(retrieve)
 
 
 def format_docs(docs: List[Document]) -> str:
@@ -315,26 +379,56 @@ class RAGEngine:
             raise RuntimeError("未配置 DASHSCOPE_API_KEY，请在 .env 中填写 DASHSCOPE_API_KEY=sk-xxx")
         self.embeddings = DashScopeEmbedding(cfg.embedding_model, api_key)
         self.vector_db = load_or_build_index(cfg, self.embeddings, rebuild=rebuild)
-        self.retriever = build_retriever(self.vector_db, cfg)
+        self.reranker = DashScopeRerank(cfg.rerank_model, api_key) if cfg.use_rerank else None
+        self.retriever = build_retriever(self.vector_db, cfg, self.reranker)
         self.history_mgr = SessionHistoryManager(max_turns=cfg.max_history_turns)
         self.chain = build_rag_chain(self.retriever, cfg)
 
     # ---- 检索 ----
-    def retrieve(self, question: str, top_k: Optional[int] = None):
-        """返回 [(Document, score)]，score 为 L2 距离（越小越相似）。"""
+    def retrieve(self, question: str, top_k: Optional[int] = None) -> List[dict]:
+        """统一检索结果：先向量召回 candidate_k，rerank 开启时再精排。
+
+        返回 [{"doc", "distance"(向量L2), "rerank_score"(精排分，未开启为 None)}]，
+        按最终顺序排列（rerank 开启时按相关性，否则按距离）。
+        """
         k = top_k or self.cfg.retrieve_top_k
-        return self.vector_db.similarity_search_with_score(question, k=k)
+        hits = self.vector_db.similarity_search_with_score(
+            question, k=self.cfg.retrieve_candidate_k
+        )
+        vec_score = {id(doc): float(score) for doc, score in hits}
+        if self.reranker is not None:
+            try:
+                ranked = self.reranker.rerank(question, [d for d, _ in hits], top_n=k)
+                return [
+                    {
+                        "doc": doc,
+                        "distance": round(vec_score.get(id(doc), 0.0), 4),
+                        "rerank_score": round(score, 4),
+                    }
+                    for doc, score in ranked
+                ]
+            except Exception as e:  # noqa: BLE001 - 降级纯向量
+                logger.warning("Rerank 失败，降级为纯向量检索: %s", e)
+        return [
+            {
+                "doc": doc,
+                "distance": round(score, 4),
+                "rerank_score": None,
+            }
+            for doc, score in hits[:k]
+        ]
 
     def retrieve_payload(self, question: str, top_k: Optional[int] = None) -> List[dict]:
         """检索结果转成 Web 可序列化的 dict 列表。"""
         return [
             {
                 "index": i + 1,
-                "distance": round(float(score), 4),
-                "source": doc.metadata.get("source", "未知来源"),
-                "content": doc.page_content,
+                "distance": hit["distance"],
+                "rerank_score": hit["rerank_score"],
+                "source": hit["doc"].metadata.get("source", "未知来源"),
+                "content": hit["doc"].page_content,
             }
-            for i, (doc, score) in enumerate(self.retrieve(question, top_k))
+            for i, hit in enumerate(self.retrieve(question, top_k))
         ]
 
     # ---- 问答（非流式，CLI 用） ----
@@ -374,5 +468,6 @@ class RAGEngine:
             "model": {
                 "llm": self.cfg.llm_model,
                 "embedding": self.cfg.embedding_model,
+                "rerank": self.cfg.rerank_model if self.cfg.use_rerank else "关闭",
             },
         }

@@ -31,6 +31,8 @@
 5. 命令行参数控制文档目录 / 索引目录 / 会话 ID / 检索 Top-K / 强制重建
 
 6. Web 对话界面：SSE 流式回答、来源片段卡片、多会话隔离，浏览器直接使用
+7. Rerank 精排：向量召回候选后经 gte-rerank-v2 Cross-Encoder 重排，失败自动降级
+8. 离线评估：来源召回率@5 + LLM-as-judge 答案打分，支持两档配置对比，报告见 eval_report.md
 
 ## 🧱 技术栈
 
@@ -149,60 +151,36 @@ Web 版功能：SSE 流式回答、来源片段卡片（文件名 + 相似度距
 | `POST /api/chat`  | 提问，SSE 流式返回：`sources` → `token`\*n → `done`（或 `error`） |
 | `POST /api/clear` | 清空指定会话历史                                               |
 
-## 📝 评估数据集 test\_set.json（规划中）
+## 🔀 检索精排（Rerank）
 
-> 评估模块尚未在 
->
-> main.py
->
->  中实现。
->
-> `test_set.json`
->
->  已按以下格式预留：
-> 每一条样本包含问题、参考原文片段、标准答案，
->
-> `reference_context`
->
->  是知识库内原文片段，用于判断检索是否命中。
+检索采用两阶段：
 
+1. **粗排（向量召回）**：query 与候选片段各自 Embedding，向量相似度快但粗，一次召回 `retrieve_candidate_k`（默认 15）条；
+2. **精排（Cross-Encoder）**：调用 DashScope `gte-rerank-v2`，query 与每个候选片段拼接后重新打分，取 Top-K 交给 LLM。
 
+配置在 `rag_engine.py` 的 `Config`：`use_rerank=True` 开关、`retrieve_candidate_k` 候选数。Rerank 接口失败时自动降级为纯向量检索。
 
-```
-[
-    {
-        "question": "CDB6s断路器用来做什么？",
-        "reference_context": "CDB6s断路器用于电路保护。",
-        "reference_answer": "CDB6s断路器用于电路保护"
-    },
-    {
-        "question": "普通车间配电柜多久巡检一次？",
-        "reference_context": "普通车间配电柜每月巡检一次",
-        "reference_answer": "普通车间配电柜每月巡检一次"
-    },
-    {
-        "question": "断路器跳闸之后第一步怎么做？",
-        "reference_context": "断路器跳闸后，先断电排查故障，不能直接合闸。",
-        "reference_answer": "断路器跳闸后应先断电排查故障，不可直接合闸。"
-    }
-]
+## 📊 离线评估
+
+```bash
+python eval.py
 ```
 
-## 📊 规划中的评估指标
+对比「纯向量检索」与「向量召回 + Rerank」两档配置，指标：
 
+- **来源召回率@5**：正确的来源文档是否进入 Top-5
+- **答案平均分**：qwen-max 作为 judge 按参考答案打 1-5 分
+- **正确率**：评分 >= 4 的样本占比
 
+当前测试集（3 条）实测结果：
 
-1. **Recall@K** / **Precision@K**：检索召回率与精确率，衡量有没有找回正确信息、检索噪声多少
+| 检索配置 | 来源召回率@5 | 答案平均分(1-5) | 正确率 |
+|---|---|---|---|
+| baseline（纯向量检索） | 100% | 5.00 | 100% |
+| rerank（向量召回 + gte-rerank-v2 精排） | 100% | 5.00 | 100% |
 
-2. **Faithfulness（忠实度）**：1\~5 分，衡量模型回答是否忠于检索上下文，检测幻觉
-
-3. **Relevance（相关性）**：1\~5 分，衡量回答是否匹配用户提问，判断是否答非所问
-
-> 注意：LLM-as-judge 存在一定主观性，适合用于
->
-> **版本对比实验**
->
-> ，不作为绝对黄金标准。
+> 注：当前知识库仅 3 个 PDF / 3 个向量，召回率天花板天然偏高，上述数字主要用于建立评估流程与回归对比；扩充知识库后两档配置的差距会更有区分度。逐题明细见 `eval_report.md`。
+> LLM-as-judge 有一定主观性，适合做版本间对比实验，不作为绝对黄金标准。
 
 ## 🛠 故障排查
 
