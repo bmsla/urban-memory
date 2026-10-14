@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业知识库问答</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F5FD0'/%3E%3Cpath d='M9 11h14v2H9zm0 5h10v2H9zm0 5h7v2H9z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#F4F6F9; --panel:#FFFFFF; --ink:#1B2430; --ink-2:#5C6B7A; --ink-3:#8A99A8;
+  --line:#E2E8F0; --line-2:#EDF1F6;
+  --accent:#1F5FD0; --accent-weak:#E8F0FC; --accent-ink:#17499E; --danger:#C0392B;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(16,32,54,.06), 0 4px 16px rgba(16,32,54,.05);
+  --font:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC","Helvetica Neue",sans-serif;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%}
+body{font-family:var(--font); background:var(--bg); color:var(--ink); font-size:15px; line-height:1.6; display:flex; flex-direction:column}
+button{font-family:inherit}
+
+/* ===== 顶栏 ===== */
+.topbar{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line)}
+.brand{display:flex; align-items:center; gap:10px; min-width:0}
+.brand-mark{flex:0 0 auto; width:36px; height:36px; border-radius:9px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center}
+.brand-mark svg{width:20px; height:20px}
+.brand h1{font-size:16px; font-weight:600; letter-spacing:.01em; white-space:nowrap}
+.brand p{font-size:12px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px}
+.top-actions{display:flex; gap:8px; flex:0 0 auto}
+.btn{display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 12px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--ink); font-size:13px; cursor:pointer; transition:background .15s, border-color .15s}
+.btn:hover{background:var(--line-2); border-color:var(--line)}
+.btn:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+.btn svg{width:15px; height:15px; flex:0 0 auto}
+
+/* ===== 布局 ===== */
+.layout{flex:1; display:flex; min-height:0}
+.chat{flex:1; display:flex; flex-direction:column; min-width:0; min-height:0}
+.sidebar{display:none}
+@media (min-width:900px){
+  .sidebar{display:flex; flex-direction:column; gap:12px; width:272px; flex:0 0 272px; padding:16px; border-right:1px solid var(--line); overflow-y:auto}
+}
+
+/* ===== 侧栏面板 ===== */
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px}
+.panel h2{font-size:12px; font-weight:600; color:var(--ink-2); letter-spacing:.04em; margin-bottom:10px}
+.doc-list{list-style:none}
+.doc-list li{display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px dashed var(--line-2); font-size:13px; color:var(--ink)}
+.doc-list li:last-child{border-bottom:none}
+.doc-list svg{width:14px; height:14px; flex:0 0 auto; color:var(--ink-3); margin-top:2px}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:12px}
+.kv dt{color:var(--ink-3); white-space:nowrap}
+.kv dd{color:var(--ink); text-align:right; font-variant-numeric:tabular-nums}
+.hint ol{padding-left:18px; font-size:12px; color:var(--ink-2)}
+.hint li{margin:4px 0}
+
+/* ===== 消息区 ===== */
+.messages{flex:1; overflow-y:auto; padding:20px 16px 8px; display:flex; flex-direction:column; gap:14px}
+.msg{max-width:780px; width:100%}
+.msg.user{align-self:flex-end}
+.user .bubble{background:var(--accent); color:#fff; border-radius:14px 14px 4px 14px; padding:10px 14px; white-space:pre-wrap; word-break:break-word; font-size:15px}
+.msg.bot{align-self:flex-start}
+.bot .card{background:var(--panel); border:1px solid var(--line); border-radius:14px 14px 14px 4px; box-shadow:var(--shadow); padding:14px 16px}
+.bot .answer{white-space:pre-wrap; word-break:break-word; font-size:15px}
+.caret{display:inline-block; width:7px; height:15px; background:var(--accent); margin-left:2px; vertical-align:-2px; animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.waiting{display:flex; align-items:center; gap:8px; color:var(--ink-3); font-size:13px; margin:4px 0}
+.spinner{width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sources{margin-top:12px; border-top:1px solid var(--line-2); padding-top:10px}
+.sources-title{font-size:12px; color:var(--ink-3); margin-bottom:8px}
+.source{border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:8px; background:#FBFCFE; padding:8px 10px; margin-bottom:8px}
+.source:last-child{margin-bottom:0}
+.source-top{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.source-name{font-size:12px; font-weight:600; color:var(--accent-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.dist{flex:0 0 auto; font-size:11px; color:var(--ink-3); background:var(--line-2); padding:2px 8px; border-radius:99px; font-variant-numeric:tabular-nums}
+.source .excerpt{font-size:13px; color:var(--ink); margin-top:6px; white-space:pre-wrap; word-break:break-word}
+.source details{margin-top:4px}
+.source summary{cursor:pointer; font-size:12px; color:var(--ink-2); user-select:none; width:fit-content}
+.copy{display:inline-flex; align-items:center; gap:5px; margin-top:10px; border:none; background:none; color:var(--ink-3); font-size:12px; cursor:pointer; padding:4px 6px; border-radius:6px}
+.copy:hover{color:var(--accent); background:var(--accent-weak)}
+.copy svg{width:13px; height:13px}
+.msg.error .card{border-color:#E9B8B2; background:#FDF6F5}
+.msg.error .answer{color:var(--danger)}
+
+/* ===== 空状态 ===== */
+.empty{max-width:560px; margin:auto; text-align:center; color:var(--ink-3); padding:40px 16px}
+.empty svg{width:44px; height:44px; opacity:.6}
+.empty h2{font-size:18px; font-weight:600; color:var(--ink-2); margin:14px 0 6px}
+.empty p{font-size:13px}
+.samples{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:18px}
+.chip{border:1px solid var(--line); background:var(--panel); color:var(--ink-2); font-size:13px; padding:8px 14px; border-radius:99px; cursor:pointer; transition:border-color .15s, color .15s}
+.chip:hover{border-color:var(--accent); color:var(--accent)}
+.chip:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+
+/* ===== 输入区 ===== */
+.composer{display:flex; gap:10px; align-items:flex-end; padding:12px 16px 16px; background:linear-gradient(transparent, var(--bg) 45%)}
+.composer-inner{flex:1; display:flex; align-items:flex-end; gap:8px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:6px 6px 6px 14px; box-shadow:var(--shadow)}
+.composer textarea{flex:1; border:none; outline:none; resize:none; font-family:inherit; font-size:16px; line-height:1.5; color:var(--ink); background:transparent; max-height:180px; padding:8px 0; min-height:22px}
+.composer textarea::placeholder{color:var(--ink-3)}
+.send-btn{flex:0 0 auto; width:42px; height:42px; border:none; border-radius:11px; background:var(--accent); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:opacity .15s}
+.send-btn:hover{opacity:.88}
+.send-btn:disabled{background:var(--line); color:var(--ink-3); cursor:not-allowed; opacity:1}
+.send-btn svg{width:17px; height:17px}
+.send-btn:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+
+/* ===== Toast ===== */
+.toast{position:fixed; left:50%; bottom:88px; transform:translateX(-50%); background:#1B2430; color:#fff; font-size:13px; padding:8px 16px; border-radius:9px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:50; max-width:80vw}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    </span>
+    <div>
+      <h1>企业知识库问答</h1>
+      <p id="kbStatus">正在连接知识库…</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button id="btnNew" class="btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      新建会话
+    </button>
+    <button id="btnClear" class="btn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      清空会话
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" aria-label="知识库信息">
+    <section class="panel">
+      <h2>知识库文档</h2>
+      <ul id="docList" class="doc-list"></ul>
+    </section>
+    <section class="panel">
+      <h2>索引状态</h2>
+      <dl id="indexInfo" class="kv"></dl>
+    </section>
+    <section class="panel">
+      <h2>模型</h2>
+      <dl id="modelInfo" class="kv"></dl>
+    </section>
+    <section class="panel hint">
+      <h2>使用提示</h2>
+      <ol>
+        <li>回答只依据知识库内容，并标注来源文件</li>
+        <li>多轮追问会结合上下文，可随时新建会话</li>
+        <li>来源卡片展示检索片段与相似度距离（越小越相关）</li>
+      </ol>
+    </section>
+  </aside>
+
+  <main class="chat">
+    <div id="messages" class="messages" role="log" aria-live="polite">
+      <div id="emptyState" class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        <h2>向知识库提问</h2>
+        <p>回答会标注来源文件，可连续追问</p>
+        <div class="samples">
+          <button class="chip" type="button" data-q="CDB6s 断路器的选型规则是什么？">CDB6s 断路器的选型规则是什么？</button>
+          <button class="chip" type="button" data-q="普通车间配电柜多久巡检一次？">普通车间配电柜多久巡检一次？</button>
+          <button class="chip" type="button" data-q="采购合同的付款条款是什么？">采购合同的付款条款是什么？</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行" aria-label="问题输入框"></textarea>
+        <button id="btnSend" class="send-btn" type="button" aria-label="发送">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    sessionId: localStorage.getItem('rag_session_id') || null,
+    streaming: false
+  };
+  var messagesEl = document.getElementById('messages');
+  var inputEl = document.getElementById('input');
+  var btnSend = document.getElementById('btnSend');
+  var btnNew = document.getElementById('btnNew');
+  var btnClear = document.getElementById('btnClear');
+  var toastEl = document.getElementById('toast');
+
+  // ---------- 工具 ----------
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
+  }
+
+  function scrollToBottom(smooth) {
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function svgIcon(name) {
+    var paths = {
+      doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/>',
+      ok: '<path d="M20 6 9 17l-5-5"/>',
+      err: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>'
+    };
+    var outer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    outer.setAttribute('viewBox', '0 0 24 24');
+    outer.setAttribute('fill', 'none');
+    outer.setAttribute('stroke', 'currentColor');
+    outer.setAttribute('stroke-width', '1.5');
+    outer.setAttribute('stroke-linecap', 'round');
+    outer.setAttribute('stroke-linejoin', 'round');
+    outer.innerHTML = paths[name] || '';
+    return outer;
+  }
+
+  // ---------- 知识库信息 ----------
+  function setKbStatus(text, isError) {
+    var el2 = document.getElementById('kbStatus');
+    el2.textContent = text;
+    el2.style.color = isError ? 'var(--danger)' : '';
+  }
+
+  function loadInfo() {
+    fetch('/api/info')
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        var docList = document.getElementById('docList');
+        docList.innerHTML = '';
+        (data.docs || []).forEach(function (d) {
+          var li = el('li');
+          li.appendChild(svgIcon('doc'));
+          li.appendChild(el('span', null, d.name));
+          docList.appendChild(li);
+        });
+        var idx = data.index || {};
+        var indexInfo = document.getElementById('indexInfo');
+        indexInfo.innerHTML = '';
+        indexInfo.appendChild(el('dt', null, '向量维度'));
+        indexInfo.appendChild(el('dd', null, idx.dim == null ? '—' : idx.dim));
+        indexInfo.appendChild(el('dt', null, '向量数量'));
+        indexInfo.appendChild(el('dd', null, idx.vectors == null ? '—' : idx.vectors));
+        var modelInfo = document.getElementById('modelInfo');
+        modelInfo.innerHTML = '';
+        modelInfo.appendChild(el('dt', null, '问答模型'));
+        modelInfo.appendChild(el('dd', null, data.model.llm));
+        modelInfo.appendChild(el('dt', null, '向量模型'));
+        modelInfo.appendChild(el('dd', null, data.model.embedding));
+        setKbStatus((data.docs ? data.docs.length : 0) + ' 份文档 · 引擎就绪');
+      })
+      .catch(function (e) {
+        setKbStatus('无法连接问答服务，请先启动 python app.py', true);
+      });
+  }
+
+  // ---------- 会话管理 ----------
+  function ensureSession() {
+    if (!state.sessionId) {
+      state.sessionId = 'web_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 12) : Date.now().toString(36));
+      localStorage.setItem('rag_session_id', state.sessionId);
+    }
+    return state.sessionId;
+  }
+
+  function resetChat() {
+    messagesEl.innerHTML = '';
+    var empty = el('div', 'empty');
+    empty.id = 'emptyState';
+    empty.appendChild(svgIcon('ok'));
+    empty.appendChild(el('h2', null, '向知识库提问'));
+    empty.appendChild(el('p', null, '回答会标注来源文件，可连续追问'));
+    var samples = el('div', 'samples');
+    ['CDB6s 断路器的选型规则是什么？', '普通车间配电柜多久巡检一次？', '采购合同的付款条款是什么？'].forEach(function (q) {
+      var chip = el('button', 'chip', q);
+      chip.type = 'button';
+      chip.setAttribute('data-q', q);
+      samples.appendChild(chip);
+    });
+    empty.appendChild(samples);
+    messagesEl.appendChild(empty);
+  }
+
+  function newSession() {
+    state.sessionId = 'web_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 12) : Date.now().toString(36));
+    localStorage.setItem('rag_session_id', state.sessionId);
+    resetChat();
+    toast('已新建会话');
+  }
+
+  function clearSession() {
+    if (!state.sessionId) { toast('当前没有会话'); return; }
+    fetch('/api/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: state.sessionId })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        resetChat();
+        toast('已清空会话历史');
+      })
+      .catch(function () { toast('清空失败，请检查服务是否在运行'); });
+  }
+
+  // ---------- 消息渲染 ----------
+  function appendUser(text) {
+    var wrap = el('div', 'msg user');
+    wrap.appendChild(el('div', 'bubble', text));
+    messagesEl.appendChild(wrap);
+    scrollToBottom(true);
+  }
+
+  function appendBot() {
+    var wrap = el('div', 'msg bot');
+    var card = el('div', 'card');
+    var answer = el('div', 'answer');
+    var waiting = el('div', 'waiting');
+    waiting.appendChild(el('span', 'spinner'));
+    waiting.appendChild(el('span', null, '正在检索知识库…'));
+    var sources = el('div', 'sources');
+    sources.hidden = true;
+    var copyBtn = el('button', 'copy');
+    copyBtn.type = 'button';
+    copyBtn.hidden = true;
+    copyBtn.appendChild(svgIcon('doc'));
+    copyBtn.appendChild(el('span', null, '复制回答'));
+    card.appendChild(answer);
+    card.appendChild(waiting);
+    card.appendChild(sources);
+    card.appendChild(copyBtn);
+    wrap.appendChild(card);
+    messagesEl.appendChild(wrap);
+    scrollToBottom(true);
+    return { wrap: wrap, card: card, answer: answer, waiting: waiting, sources: sources, copyBtn: copyBtn, full: '' };
+  }
+
+  function renderSources(container, list) {
+    container.innerHTML = '';
+    container.hidden = false;
+    container.appendChild(el('div', 'sources-title', '检索到 ' + list.length + ' 个相关片段（距离越小越相关）'));
+    list.forEach(function (s) {
+      var card = el('div', 'source');
+      var top = el('div', 'source-top');
+      top.appendChild(el('span', 'source-name', s.source));
+      top.appendChild(el('span', 'dist', '距离 ' + s.distance.toFixed(4)));
+      card.appendChild(top);
+      var content = s.content || '';
+      var excerpt = content.length > 160 ? content.slice(0, 160) + '…' : content;
+      card.appendChild(el('div', 'excerpt', excerpt));
+      if (content.length > 160) {
+        var details = el('details');
+        details.appendChild(el('summary', null, '展开全文'));
+        details.appendChild(el('div', 'excerpt', content));
+        card.appendChild(details);
+      }
+      container.appendChild(card);
+    });
+    scrollToBottom(true);
+  }
+
+  function finalizeBot(bot, answer, sessionId) {
+    bot.answer.textContent = answer;
+    bot.full = answer;
+    bot.waiting.hidden = true;
+    bot.copyBtn.hidden = false;
+    if (sessionId) { state.sessionId = sessionId; localStorage.setItem('rag_session_id', sessionId); }
+    bot.copyBtn.addEventListener('click', function () {
+      navigator.clipboard.writeText(bot.full).then(function () { toast('已复制回答'); });
+    });
+    scrollToBottom(true);
+  }
+
+  function failBot(bot, message) {
+    bot.wrap.classList.add('error');
+    bot.answer.textContent = '生成失败：' + message;
+    bot.waiting.hidden = true;
+    scrollToBottom(true);
+  }
+
+  // ---------- 发送与 SSE ----------
+  function setStreaming(on) {
+    state.streaming = on;
+    btnSend.disabled = on;
+    btnNew.disabled = on;
+    btnClear.disabled = on;
+  }
+
+  function send(question) {
+    if (state.streaming) return;
+    var q = (typeof question === 'string' ? question : inputEl.value).trim();
+    if (!q) { inputEl.focus(); return; }
+    inputEl.value = '';
+    autoResize();
+    appendUser(q);
+    ensureSession();
+    var bot = appendBot();
+    setStreaming(true);
+
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, session_id: state.sessionId })
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.body.getReader();
+      })
+      .then(function (reader) {
+        var decoder = new TextDecoder();
+        var buf = '';
+        function pump() {
+          return reader.read().then(function (res) {
+            if (res.done) return;
+            buf += decoder.decode(res.value, { stream: true });
+            var idx;
+            while ((idx = buf.indexOf('\n\n')) >= 0) {
+              var block = buf.slice(0, idx);
+              buf = buf.slice(idx + 2);
+              var line = block.split('\n').filter(function (l) { return l.indexOf('data: ') === 0; })[0];
+              if (!line) continue;
+              var payload;
+              try { payload = JSON.parse(line.slice(6)); } catch (e) { continue; }
+              handleEvent(payload, bot);
+            }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .then(function () { setStreaming(false); })
+      .catch(function (e) {
+        setStreaming(false);
+        failBot(bot, e.message || String(e));
+      });
+  }
+
+  function handleEvent(payload, bot) {
+    if (payload.type === 'sources') {
+      bot.waiting.querySelector('span:last-child').textContent = '正在生成回答…';
+      renderSources(bot.sources, payload.data || []);
+    } else if (payload.type === 'token') {
+      if (bot.waiting && !bot.waiting.hidden) bot.waiting.hidden = true;
+      bot.answer.textContent += payload.delta || '';
+      bot.full += payload.delta || '';
+      scrollToBottom(false);
+    } else if (payload.type === 'done') {
+      finalizeBot(bot, payload.answer || bot.full, payload.session_id);
+    } else if (payload.type === 'error') {
+      failBot(bot, payload.message || '未知错误');
+    }
+  }
+
+  // ---------- 输入框 ----------
+  function autoResize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
+  }
+  inputEl.addEventListener('input', autoResize);
+  inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      send();
+    }
+  });
+  btnSend.addEventListener('click', function () { send(); });
+  btnNew.addEventListener('click', newSession);
+  btnClear.addEventListener('click', clearSession);
+
+  // ---------- 启动 ----------
+  // 示例问题：容器级事件委托，静态与动态渲染的 chip 都统一响应
+  messagesEl.addEventListener('click', function (e) {
+    var chip = e.target.closest('.chip');
+    if (chip && chip.getAttribute('data-q')) {
+      send(chip.getAttribute('data-q'));
+    }
+  });
+  loadInfo();
+  inputEl.focus();
+})();
+</script>
+</body>
+</html>
