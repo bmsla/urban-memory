@@ -75,7 +75,7 @@ enterprise_ai_system/
 
 
 ```
-pip install langchain-openai langchain-community langchain-text-splitters faiss-cpu pdfplumber dashscope python-dotenv fastapi uvicorn
+pip install -r requirements.txt
 # fastapi / uvicorn 为 Web 模式需要；FAISS 由 langchain-community 提供，无需单独安装
 ```
 
